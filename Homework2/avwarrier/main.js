@@ -1,38 +1,45 @@
-// 1. Global dimensions & margins
-const legendWidth = 20;
-const legendPadding = 40;
+const winW = window.innerWidth;
+const winH = window.innerHeight;
+
+const legendWidth   = winW * 0.02;
+const legendPadding = winW * 0.04;
 
 // Heatmap dimensions
-const margin = { top: 150, right: 0, bottom: 50, left: 80 };
-const width = 600 - margin.left - margin.right;
-const height = 400 - margin.top - margin.bottom;
+const margin = {
+  top:    winH * 0.19,
+  right:  0,
+  bottom: winH * 0.06,
+  left:   winW * 0.06
+};
+const width  = (winW * 0.45) - margin.left - margin.right;
+const height = (winH * 0.50) - margin.top  - margin.bottom;
 const totalWidth = width + margin.left + margin.right + legendWidth + legendPadding;
 
 // Bar chart dimensions
-const margin2 = { top: 100, right: 20, bottom: 50, left: 80 };
-const width2 = width;
-// make the bar‑chart plot 100 px taller than the heatmap's
-const height2 = height + 30;
-
-// Parallel coords dimensions
-const margin3 = { top: 50, right: 100, bottom: 20, left: 50 };
-const width3 = totalWidth - margin3.left;
-const height3 = 400 - margin3.top - margin3.bottom;
+const margin2 = {
+  top:    winH * 0.12,
+  right:  winW * 0.02,
+  bottom: winH * 0.06,
+  left:   winW * 0.06
+};
+const width2  = width * 0.9;
+const height2 = height + (winH * 0.01);
 
 // Sankey dimensions
-const mK = { top: 50, right: 120, bottom: 20, left: 60 };
-const wK = 700;
-const hK = 300;
+const mK = {
+  top:    winH * 0.06,
+  right:  winW * 0.10,
+  bottom: winH * 0.04,
+  left:   winW * 0.05
+};
+const wK = winW * 0.42;
+const hK = winH * 0.35;
 
-// 4. Load & preprocess data
-// Make the CSV callback asynchronous and ensure d3-sankey is loaded before use
 d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
-  // Ensure the d3‑sankey plugin is loaded (needed for the Sankey diagram)
   if (!('sankey' in d3)) {
     await import('https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js');
   }
   
-  // ---- Create tooltips for all visualizations ----
   // Heatmap tooltip
   const tooltip = d3.select('#heatmap')
     .append('div')
@@ -43,16 +50,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .append('div')
     .attr('class', 'tooltip');
 
-  // Stream-graph tooltip
-  const tooltipStream = d3.select('#parallel')
-    .append('div')
-    .attr('class', 'tooltip');
-    
-  // =============================================
-  // =========== HEATMAP VISUALIZATION ===========
-  // =============================================
-  
-  // 2. SVG container for heatmap
+// Heatmap
   const svg = d3.select('#heatmap')
     .append('svg')
     .attr('width', totalWidth)
@@ -63,13 +61,22 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   // Add title for heatmap
   svg.append("text")
     .attr("x", width / 2)
-    .attr("y", -130)
+    .attr("y", -height * 0.5)
     .attr("text-anchor", "middle")
     .style("font-size", "16px")
     .style("font-weight", "bold")
     .text("Salary per Experience Level over Time");
+
+  // Add view type
+    svg.append("text")
+    .attr("x", width / 2 + 205)
+    .attr("y", -height * 0.5)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .style("font-weight", "normal")
+    .text("- Context View");
   
-  // Aggregate mean salary by experience & year
+  // Mean salary by experience & year
   const nested = d3.rollups(
     data,
     v => d3.mean(v, d => d.salary_in_usd),
@@ -77,7 +84,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     d => d.work_year
   );
 
-  // Pivot into flat array
+  // Turn into flat array
   const heatData = [];
   nested.forEach(([level, arr]) => {
     arr.forEach(([year, avg]) => {
@@ -85,7 +92,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     });
   });
 
-  // 5. Scales for heatmap
+  // Scales for heatmap
   const xLevels = Array.from(new Set(heatData.map(d => d.year))).sort();
   const yLevels = ['EN','MI','SE','EX'];
 
@@ -103,7 +110,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .interpolator(d3.interpolateViridis)
     .domain(d3.extent(heatData, d => d.avg));
 
-  // 6. Axes for heatmap
+  // Axes for heatmap
   svg.append('g')
     .attr('transform', `translate(0, ${height})`)
     .call(d3.axisBottom(x))
@@ -131,7 +138,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .style("font-size", "12px")
     .text("Experience Level");
 
-  // 7. Draw cells
+  // Draw cells
   svg.selectAll()
     .data(heatData, d => d.level + ':' + d.year)
     .join('rect')
@@ -158,7 +165,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         tooltip.style('opacity', 0);
       });
 
-  // 8. Legend for heatmap (horizontal colorbar on top)
+  // Legend for heatmap
   const legendHWidth = width;
   const legendHeight = 10;
 
@@ -181,7 +188,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
 
   // Draw gradient bar
   legendH.append("rect")
-    .attr("y", 10)
+    .attr("y", height * 0.25)
     .attr("width", legendHWidth)
     .attr("height", legendHeight)
     .style("fill", "url(#heat-legend-gradient)");
@@ -196,23 +203,19 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .tickFormat(d3.format("$,"));
 
   legendH.append("g")
-    .attr("transform", "translate(0, 10)")
+    .attr("transform", `translate(0, ${height * 0.25})`)
     .call(legendHAxis)
     .call(g => g.select(".domain").remove());
 
   // Legend title
   legendH.append("text")
     .attr("x", legendHWidth / 2)
-    .attr("y", -30)
+    .attr("y", -height * -0.11)
     .attr("text-anchor", "middle")
     .style("font-size", "12px")
     .text("Avg Salary (USD)");
     
-  // =============================================
-  // =========== BAR CHART VISUALIZATION =========
-  // =============================================
-  
-  // SVG container for bar chart
+// Bar chart  
   const barchartSvg = d3.select('#barchart')
     .append('svg')
     .attr('width', width2 + margin2.left + margin2.right)
@@ -227,11 +230,19 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .style("font-weight", "bold")
     .text("Remote Work Salaries per Experience Level");
   
+  barchartSvg.append("text")
+    .attr("x", (width2 + margin2.left + margin2.right) / 2 + 220)
+    .attr("y", 20)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .style("font-weight", "normal")
+    .text("- Focus View");
+  
   // Add the main chart group after the title
   const svg2 = barchartSvg.append('g')
     .attr('transform', `translate(${margin2.left},${margin2.top})`);
   
-  // Prepare grouped data: avg salary by remote_ratio & experience_level
+  // Prepare grouped data
   const grouped = d3.rollups(
     data,
     v => d3.mean(v, d => d.salary_in_usd),
@@ -351,13 +362,9 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         tooltip2.style('opacity', 0);
       });
  
-  /* ===== PARALLEL-COORDINATES BLOCK (temporarily disabled) ===== */
-  
-  // =============================================
-  // ============= SANKEY VISUALIZATION ==========
-  // =============================================
-  
-  // Clear the #parallel panel
+
+// Sankey
+
   d3.select('#sankey').html('');
 
   // SVG container for Sankey diagram
@@ -370,13 +377,18 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
       
   // Add title for Sankey diagram
   svgK.append('text')
-    .attr('x', wK / 2).attr('y', -20)
+    .attr('x', wK / 2 - 150).attr('y', -10)
     .attr('text-anchor', 'middle')
     .style('font-size', '16px').style('font-weight', 'bold')
     .text('Job Title → Experience Level → Salary Band');
 
+    svgK.append('text')
+    .attr('x', wK / 2 - 25).attr('y', 10)
+    .attr('text-anchor', 'middle')
+    .style('font-size', '15px').style('font-weight', 'normal')
+    .text('- Focus View');
+
   // Data preparation for Sankey
-  // Compute top 5 job titles by frequency
   const topTitles = Array.from(
     d3.rollup(data, v => v.length, d => d.job_title)
   )
@@ -389,7 +401,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     { lbl:'<75k',      lo:0,      hi:75000 },
     { lbl:'75–125k',   lo:75000,  hi:125000 },
     { lbl:'125–175k',  lo:125000, hi:175000 },
-    { lbl:'≥175k',     lo:175000, hi:Infinity }
+    { lbl:'>175k',     lo:175000, hi:Infinity }
   ];
 
   // Build nodes
@@ -400,7 +412,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   ];
   const idx = n => nodes.findIndex(o => o.name === n);
 
-  // Build links (title → exp)
+  // Build links (title -> exp)
   const links = [];
   topTitles.forEach(t => {
     expLevels.forEach(e => {
@@ -410,7 +422,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     });
   });
   
-  // Links (exp → salary band)
+  // Links (exp -> salary band)
   expLevels.forEach(e => {
     salaryBands.forEach(b => {
       const v = data.filter(d =>
@@ -433,11 +445,16 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     links: links.map(d => ({ ...d }))
   });
 
-  // Colour by job title
+  // Wrapper group for links and nodes
+  const sankeyContent = svgK.append('g')
+    .attr('class', 'sankeyContent')
+    .attr('transform', 'translate(0, 20)');
+
+  // Color by job title
   const col = d3.scaleOrdinal(d3.schemeCategory10).domain(topTitles);
 
   // Links
-  svgK.append('g').selectAll('path')
+  sankeyContent.append('g').selectAll('path')
     .data(graph.links)
     .join('path')
       .attr('d', sankeyLinkHorizontal())
@@ -448,7 +465,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
       .attr('stroke-width', d => Math.max(1, d.width));
 
   // Nodes
-  const gNodes = svgK.append('g').selectAll('g')
+  const gNodes = sankeyContent.append('g').selectAll('g')
     .data(graph.nodes)
     .join('g');
 
@@ -471,7 +488,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
 
   // Legend for experience levels
   const legend = svgK.append('g')
-    .attr('transform', `translate(${wK + 20}, 0)`);
+    .attr('transform', `translate(${wK * 0.6}, -40)`);
 
   // Experience‑level legend items
   const expLegend = [
@@ -481,21 +498,29 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     { code: 'EX', desc: 'Executive‑level' }
   ];
 
-  // Add a border box behind the legend items
+  // Add a box around legend items
   legend.append('rect')
     .attr('x', -8)
-    .attr('y', -8)
-    .attr('width', 160)
-    .attr('height', expLegend.length * 18 + 16)
+    .attr('y', 0)
+    .attr('width', 240)
+    .attr('height', expLegend.length * 12)
     .attr('fill', 'none')
     .attr('stroke', 'black')
     .attr('stroke-width', 1);
 
   expLegend.forEach((d, i) => {
-    legend.append('text')
-      .attr('x', 0)
-      .attr('y', i * 18 + 10)
+    if (i % 2 == 0) {
+      legend.append('text')
+      .attr('x', i * 50)
+      .attr('y', 20)
       .style('font-size', '12px')
       .text(`${d.code} — ${d.desc}`);
+    } else {
+      legend.append('text')
+      .attr('x', i * 50 - 50)
+      .attr('y', 40)
+      .style('font-size', '12px')
+      .text(`${d.code} — ${d.desc}`);
+    }
   });
 });

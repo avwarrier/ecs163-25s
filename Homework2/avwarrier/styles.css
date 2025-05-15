@@ -57,7 +57,7 @@ body {
   justify-content: center;
   align-items: center;
   border-right: black 1px solid;
-  width: 950px;
+  width: 52%;
 }
 
 #barchart {
@@ -66,10 +66,4 @@ body {
   justify-content: center;
   align-items: center;
   margin-top: 20px;
-}
-
-#sankey svg,
-#barchart svg {
-  width: 100%;
-  height: 100%;
 }
