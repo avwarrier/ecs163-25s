@@ -6,39 +6,75 @@ const legendPadding = winW * 0.04;
 
 // Heatmap dimensions
 const margin = {
-  top:    winH * 0.19,
+  top:    winH * 0.30,
   right:  0,
   bottom: winH * 0.06,
-  left:   winW * 0.06
+  left:   winW * 0.1
 };
-const width  = (winW * 0.45) - margin.left - margin.right;
-const height = (winH * 0.50) - margin.top  - margin.bottom;
+const width  = ((winW * 0.45) - margin.left - margin.right);
+const height = (winH * 0.8) - margin.top  - margin.bottom;
 const totalWidth = width + margin.left + margin.right + legendWidth + legendPadding;
 
 // Bar chart dimensions
 const margin2 = {
-  top:    winH * 0.12,
+  top:    winH * 0.25,
   right:  winW * 0.02,
   bottom: winH * 0.06,
   left:   winW * 0.06
 };
-const width2  = width * 0.9;
-const height2 = height + (winH * 0.01);
+const width2  = width
+const height2 = height
 
 // Sankey dimensions
 const mK = {
   top:    winH * 0.06,
-  right:  winW * 0.10,
-  bottom: winH * 0.04,
+  right:  winW * 0.05,
+  bottom: winH * 0.05,
   left:   winW * 0.05
 };
-const wK = winW * 0.42;
-const hK = winH * 0.35;
+const wK = winW * 0.9;  // 90% of width
+const hK = winH * 0.80; // 85% of height
 
+// Main load
+// Main load
 d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
+  // Helper: map detailed job titles into base categories
+  function normalizeTitle(job) {
+    if (job.includes('Data Engineer')) return 'Data Engineer';
+    if (job.includes('Data Scientist')) return 'Data Scientist';
+    if (job.includes('Data Analyst')) return 'Data Analyst';
+    if (job.includes('Machine Learning Engineer')) return 'ML Engineer';
+    if (job.includes('Analytics Engineer')) return 'Analytics Engineer';
+    return 'Other';
+  }
+  // Hide other views
+  d3.select('#heatmap').style('display', 'none');
+  d3.select('#barchart').style('display', 'none');
   if (!('sankey' in d3)) {
     await import('https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js');
   }
+
+  // Back button (initially hidden)
+  const backBtn = d3.select('body').append('button')
+    .attr('id', 'back-btn')
+    .text('← Back')
+    .style('position', 'fixed')
+    .style('top', '20px')
+    .style('left', '20px')
+    .style('display', 'none')
+    .style('padding', '8px 12px')
+    .style('font-size', '14px')
+    .on('click', () => {
+      // hide detail, show sankey
+      d3.select('#heatmap').style('display', 'none');
+      d3.select('#barchart').style('display', 'none');
+      d3.select('#sankey').style('display', 'block');
+      // reset sankey zoom
+      d3.select('#sankey-wrapper').select('svg')
+        .transition().duration(500)
+        .style('transform', 'translate(0px,0px) scale(1)');
+      backBtn.style('display', 'none');
+    });
   
   // Heatmap tooltip
   const tooltip = d3.select('#heatmap')
@@ -61,51 +97,46 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   // Add title for heatmap
   svg.append("text")
     .attr("x", width / 2)
-    .attr("y", -height * 0.5)
+    .attr("y", winH * -0.1)
     .attr("text-anchor", "middle")
     .style("font-size", "16px")
     .style("font-weight", "bold")
-    .text("Salary per Experience Level over Time");
-
-  // Add view type
-    svg.append("text")
-    .attr("x", width / 2 + 205)
-    .attr("y", -height * 0.5)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .style("font-weight", "normal")
-    .text("- Context View");
+    .text("Salary per Job Type over Time");
   
-  // Mean salary by experience & year
-  // Selection state for experience levels
+  // Mean salary by job title & year
+  // Selection state for job titles
   const selectedLevels = new Set();
 
   // Function to update heatmap styling based on selection
   function updateHeatmapSelection() {
     svg.selectAll('rect')
-      .attr('opacity', d => selectedLevels.size === 0 || selectedLevels.has(d.level) ? 1 : 0.2)
-      .attr('stroke', d => selectedLevels.has(d.level) ? 'black' : 'none')
-      .attr('stroke-width', d => selectedLevels.has(d.level) ? 2 : 0);
+      .attr('opacity', d => selectedLevels.size === 0 || selectedLevels.has(d.title) ? 1 : 0.2)
+      .attr('stroke', d => selectedLevels.has(d.title) ? 'black' : 'none')
+      .attr('stroke-width', d => selectedLevels.has(d.title) ? 2 : 0);
   }
 
-  const nested = d3.rollups(
+  let nested = d3.rollups(
     data,
     v => d3.mean(v, d => d.salary_in_usd),
-    d => d.experience_level,
+    d => normalizeTitle(d.job_title),
     d => d.work_year
   );
+  // Remove the "Other" category from heatmap data
+  nested = nested.filter(([title]) => title !== 'Other');
 
   // Turn into flat array
   const heatData = [];
-  nested.forEach(([level, arr]) => {
+  nested.forEach(([title, arr]) => {
     arr.forEach(([year, avg]) => {
-      heatData.push({ level, year: year.toString(), avg });
+      heatData.push({ title, year: year.toString(), avg });
     });
   });
 
+  heatData.push({ title: "Analytics Engineer", year: '2020', avg: null });
+
   // Scales for heatmap
   const xLevels = Array.from(new Set(heatData.map(d => d.year))).sort();
-  const yLevels = ['EN','MI','SE','EX'];
+  const yLevels = ['Data Engineer','Data Scientist','Data Analyst','ML Engineer', 'Analytics Engineer'];
 
   const x = d3.scaleBand()
     .domain(xLevels)
@@ -144,45 +175,54 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   svg.append("text")
     .attr("transform", "rotate(-90)")
     .attr("x", -height / 2)
-    .attr("y", -margin.left + 30)
+    .attr("y", -margin.left + 60)
     .attr("text-anchor", "middle")
     .style("font-size", "12px")
-    .text("Experience Level");
+    .text("Job Title");
 
   // Draw cells
+  // Keep a reference to the full heatData for row-wise computation
+  const fullHeatData = heatData;
   svg.selectAll()
-    .data(heatData, d => d.level + ':' + d.year)
+    .data(heatData, d => d.title + ':' + d.year)
     .join('rect')
       .attr('x', d => x(d.year))
-      .attr('y', d => y(d.level))
+      .attr('y', d => y(d.title))
       .attr('width',  x.bandwidth())
       .attr('height', y.bandwidth())
-      .attr('fill', d => color(d.avg))
+      .attr('fill', d => {
+        return (d.avg == null || isNaN(d.avg))
+          ? '#cccccc'
+          : color(d.avg);
+      })
       .on('mouseover', (event, d) => {
-        // Determine tooltip text and average to show
-        let labelText, avgToShow;
-        if (selectedLevels.size > 0) {
-          // Compute comma-separated list of selected levels
-          const levelsList = Array.from(selectedLevels).join(', ');
-          // Filter data for the hovered year and selected levels
-          const filtered = data.filter(item =>
-            item.work_year.toString() === d.year &&
-            selectedLevels.has(item.experience_level)
-          );
-          avgToShow = d3.mean(filtered, item => item.salary_in_usd);
-          labelText = `Year: ${d.year}<br>Levels: ${levelsList}`;
-        } else {
-          avgToShow = d.avg;
-          labelText = `Year: ${d.year}<br>Level: ${d.level}`;
+        // No selection: per-cell tooltip
+        if (selectedLevels.size === 0) {
+          const [mx, my] = d3.pointer(event, d3.select('#heatmap').node());
+          tooltip
+            .style('opacity', 1)
+            .html(`Year: ${d.year}<br>Title: ${d.title}<br>Avg: \$${d.avg != null ? d.avg.toFixed(0) : 'N/A'}`)
+            .style('left',  (mx + 15) + 'px')
+            .style('top',   (my - 25) + 'px');
+          return;
         }
+        // If there is a selection, ignore rows not in that set
+        if (!selectedLevels.has(d.title)) return;
+
+        // Compute combined average across all selected titles
+        const combinedCells = fullHeatData.filter(h => selectedLevels.has(h.title) && h.avg != null);
+        const combinedAvg = d3.mean(combinedCells, h => h.avg);
+        // Build a comma-separated list of selected titles
+        const titlesList = Array.from(selectedLevels).join(', ');
         const [mx, my] = d3.pointer(event, d3.select('#heatmap').node());
         tooltip
           .style('opacity', 1)
-          .html(`${labelText}<br>Avg: \$${avgToShow.toFixed(0)}`)
+          .html(`Titles: ${titlesList}<br>Avg over time: \$${combinedAvg.toFixed(0)}`)
           .style('left',  (mx + 15) + 'px')
           .style('top',   (my - 25) + 'px');
       })
-      .on('mousemove', event => {
+      .on('mousemove', (event, d) => {
+        if (selectedLevels.size > 0 && !selectedLevels.has(d.title)) return;
         const [mx, my] = d3.pointer(event, d3.select('#heatmap').node());
         tooltip
           .style('left',  (mx + 15) + 'px')
@@ -192,11 +232,11 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         tooltip.style('opacity', 0);
       })
       .on('click', (event, d) => {
-        // Toggle selection of this level
-        if (selectedLevels.has(d.level)) {
-          selectedLevels.delete(d.level);
+        // Toggle selection of this title
+        if (selectedLevels.has(d.title)) {
+          selectedLevels.delete(d.title);
         } else {
-          selectedLevels.add(d.level);
+          selectedLevels.add(d.title);
         }
         updateHeatmapSelection();
       });
@@ -224,7 +264,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
 
   // Draw gradient bar
   legendH.append("rect")
-    .attr("y", height * 0.25)
+    .attr("y", height * 0.28)
     .attr("width", legendHWidth)
     .attr("height", legendHeight)
     .style("fill", "url(#heat-legend-gradient)");
@@ -239,14 +279,14 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .tickFormat(d3.format("$,"));
 
   legendH.append("g")
-    .attr("transform", `translate(0, ${height * 0.25})`)
+    .attr("transform", `translate(0, ${height * 0.28})`)
     .call(legendHAxis)
     .call(g => g.select(".domain").remove());
 
   // Legend title
   legendH.append("text")
     .attr("x", legendHWidth / 2)
-    .attr("y", -height * -0.11)
+    .attr("y", height * 0.2)
     .attr("text-anchor", "middle")
     .style("font-size", "12px")
     .text("Avg Salary (USD)");
@@ -260,19 +300,11 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   // Add title directly to the SVG, not inside the g-element
   barchartSvg.append("text")
     .attr("x", (width2 + margin2.left + margin2.right) / 2)
-    .attr("y", 20)
+    .attr("y", winH * 0.15)
     .attr("text-anchor", "middle")
     .style("font-size", "16px")
     .style("font-weight", "bold")
     .text("Remote Work Salaries per Experience Level");
-  
-  barchartSvg.append("text")
-    .attr("x", (width2 + margin2.left + margin2.right) / 2 + 220)
-    .attr("y", 20)
-    .attr("text-anchor", "middle")
-    .style("font-size", "16px")
-    .style("font-weight", "normal")
-    .text("- Focus View");
   
   // Add the main chart group after the title
   const svg2 = barchartSvg.append('g')
@@ -344,7 +376,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   
   // Top-centered legend for bar chart
   const legendTop = svg2.append('g')
-    .attr('transform', `translate(${width2 / 2}, ${-margin2.top / 2})`);
+    .attr('transform', `translate(${width2 / 2}, ${winH * -0.05})`);
   
   legendTop.append('text')
     .attr('x', 0)
@@ -367,6 +399,17 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
       .attr('text-anchor', 'start');
   });
   
+  // --- Bar chart filtering state and logic ---
+  // Selection state for bar chart experience levels
+  const selectedBarLevels = new Set();
+
+  // Function to update bar chart styling based on selection
+  function updateBarFilter() {
+    console.log(selectedBarLevels);
+    svg2.selectAll('rect.bar-rect')
+      .attr('opacity', d => selectedBarLevels.size === 0 || selectedBarLevels.has(d.level) ? 1 : 0.1);
+  }
+
   // Bars
   svg2.selectAll('g.layer')
     .data(barData)
@@ -375,12 +418,16 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .selectAll('rect')
     .data(d => levels.map(l => ({level: l, value: d[l]})))
     .join('rect')
+      .attr('class', 'bar-rect')
       .attr('x', d => x1(d.level))
       .attr('y', d => y2(d.value))
       .attr('width', x1.bandwidth())
       .attr('height', d => height2 - y2(d.value))
       .attr('fill', d => color2(d.level))
       .on('mouseover', (event, d) => {
+        if (selectedBarLevels.size > 0 && !selectedBarLevels.has(d.level)) {
+          return;
+        }
         const [mx, my] = d3.pointer(event, d3.select('#barchart').node());
         tooltip2
           .style('opacity', 1)
@@ -388,26 +435,50 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
           .style('left', (mx + 15) + 'px')
           .style('top', (my - 25) + 'px');
       })
-      .on('mousemove', event => {
+      .on('mousemove', function(event, d) {
+        if (selectedBarLevels.size > 0 && !selectedBarLevels.has(d.level)) {
+          return;
+        }
         const [mx, my] = d3.pointer(event, d3.select('#barchart').node());
         tooltip2
           .style('left', (mx + 15) + 'px')
           .style('top', (my - 25) + 'px');
       })
-      .on('mouseout', () => {
+      .on('mouseout', function() {
         tooltip2.style('opacity', 0);
+      })
+      .on('click', (event, d) => {
+        // Toggle selection of this level
+        if (selectedBarLevels.has(d.level)) {
+          selectedBarLevels.delete(d.level);
+        } else {
+          selectedBarLevels.add(d.level);
+        }
+        updateBarFilter();
       });
+  // Initialize bar selection styling after drawing bars
+  updateBarFilter();
  
 
 // Sankey
 
   d3.select('#sankey').html('');
 
-  // SVG container for Sankey diagram
-  const svgK = d3.select('#sankey')
+  // Sankey wrapper for pan/zoom
+  const sankeyWrapper = d3.select('#sankey')
+    .append('div')
+      .attr('id', 'sankey-wrapper')
+      .style('overflow', 'hidden')
+      .style('width', (wK + mK.left + mK.right) + 'px')
+      .style('margin', '0 auto');
+
+  const svgK = sankeyWrapper
     .append('svg')
       .attr('width', wK + mK.left + mK.right)
       .attr('height', hK + mK.top + mK.bottom)
+      .style('display', 'block')
+      .style('margin', '0 auto')
+      .style('transform-origin', '0 0')
     .append('g')
       .attr('transform', `translate(${mK.left},${mK.top})`);
       
@@ -417,12 +488,6 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .attr('text-anchor', 'middle')
     .style('font-size', '16px').style('font-weight', 'bold')
     .text('Job Title → Experience Level → Salary Band');
-
-    svgK.append('text')
-    .attr('x', wK / 2 - 25).attr('y', 10)
-    .attr('text-anchor', 'middle')
-    .style('font-size', '15px').style('font-weight', 'normal')
-    .text('- Focus View');
 
   // Data preparation for Sankey
   const topTitles = Array.from(
@@ -522,6 +587,37 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .attr('x', d => d.x1 + 6)
     .attr('text-anchor', 'start');
 
+  const levelZoom = {
+    'SE': -0.50,
+    'EX' : -1.30,
+    'MI': -1.60,
+    'EN': -2.00
+  }
+  // Click on experience-level nodes to switch to detail view with smooth pan/zoom
+  gNodes
+    .filter(d => ['EN', 'MI', 'SE', 'EX'].includes(d.name))
+    .style('cursor', 'pointer')
+    .on('click', (event, d) => {
+      const level = d.name;
+      // animate Sankey zoom-in
+      sankeyWrapper.select('svg')
+        .transition().duration(1000)
+        .styleTween('transform', () =>
+          d3.interpolateString('translate(0px,0px) scale(1)', `translate(-1600px,${levelZoom[level] * winH}px) scale(3)`)
+        )
+        .on('end', () => {
+          // after animation, switch views
+          d3.select('#sankey').style('display', 'none');
+          d3.select('#heatmap').style('display', 'block');
+          d3.select('#barchart').style('display', 'block');
+          backBtn.style('display', 'block');
+          // set detail filters for heatmap
+          selectedBarLevels.clear();
+          selectedBarLevels.add(level);
+          updateBarFilter();
+        });
+    });
+
   // Legend for experience levels
   const legend = svgK.append('g')
     .attr('transform', `translate(${wK * 0.6}, -40)`);
@@ -560,5 +656,3 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     }
   });
 });
-  // Initialize selection styling after drawing heatmap
-  updateHeatmapSelection();
