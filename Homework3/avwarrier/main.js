@@ -37,6 +37,7 @@ const hK = winH * 0.80; // 85% of height
 
 // Main load
 // Main load
+// Main load
 d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   // Helper: map detailed job titles into base categories
   function normalizeTitle(job) {
@@ -103,65 +104,29 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .style("font-weight", "bold")
     .text("Salary per Job Type over Time");
   
-  // Mean salary by job title & year
-  // Selection state for job titles
+  // Selection state for job titles (for heatmap selection)
   const selectedLevels = new Set();
 
-  // Function to update heatmap styling based on selection
-  function updateHeatmapSelection() {
-    svg.selectAll('rect')
-      .attr('opacity', d => selectedLevels.size === 0 || selectedLevels.has(d.title) ? 1 : 0.2)
-      .attr('stroke', d => selectedLevels.has(d.title) ? 'black' : 'none')
-      .attr('stroke-width', d => selectedLevels.has(d.title) ? 2 : 0);
-  }
-
-  let nested = d3.rollups(
-    data,
-    v => d3.mean(v, d => d.salary_in_usd),
-    d => normalizeTitle(d.job_title),
-    d => d.work_year
-  );
-  // Remove the "Other" category from heatmap data
-  nested = nested.filter(([title]) => title !== 'Other');
-
-  // Turn into flat array
-  const heatData = [];
-  nested.forEach(([title, arr]) => {
-    arr.forEach(([year, avg]) => {
-      heatData.push({ title, year: year.toString(), avg });
-    });
-  });
-
-  heatData.push({ title: "Analytics Engineer", year: '2020', avg: null });
-
-  // Scales for heatmap
-  const xLevels = Array.from(new Set(heatData.map(d => d.year))).sort();
-  const yLevels = ['Data Engineer','Data Scientist','Data Analyst','ML Engineer', 'Analytics Engineer'];
-
+  // Scales for heatmap (will be updated in drawHeatmapForLevel)
   const x = d3.scaleBand()
-    .domain(xLevels)
     .range([0, width])
     .padding(0.05);
 
   const y = d3.scaleBand()
-    .domain(yLevels)
     .range([0, height])
     .padding(0.05);
 
+  // Color scale for heatmap (domain set in drawHeatmapForLevel)
   const color = d3.scaleSequential()
-    .interpolator(d3.interpolateViridis)
-    .domain(d3.extent(heatData, d => d.avg));
+    .interpolator(d3.interpolateViridis);
 
-  // Axes for heatmap
+  // Axes for heatmap (created once, updated later)
   svg.append('g')
-    .attr('transform', `translate(0, ${height})`)
-    .call(d3.axisBottom(x))
-    .selectAll('text')
-      .attr('transform', 'rotate(-40)')
-      .style('text-anchor', 'end');
+    .attr('class', 'x-axis')
+    .attr('transform', `translate(0, ${height})`);
 
   svg.append('g')
-    .call(d3.axisLeft(y));
+    .attr('class', 'y-axis');
 
   // X-axis label
   svg.append("text")
@@ -180,21 +145,91 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .style("font-size", "12px")
     .text("Job Title");
 
-  // Draw cells
-  // Keep a reference to the full heatData for row-wise computation
-  const fullHeatData = heatData;
-  svg.selectAll()
-    .data(heatData, d => d.title + ':' + d.year)
-    .join('rect')
+  // Function to update heatmap selection styling
+  function updateHeatmapSelection() {
+    svg.selectAll('rect.heat')
+      .attr('opacity', d => selectedLevels.size === 0 || selectedLevels.has(d.title) ? 1 : 0.2)
+      .attr('stroke', d => selectedLevels.has(d.title) ? 'black' : 'none')
+      .attr('stroke-width', d => selectedLevels.has(d.title) ? 2 : 0);
+  }
+
+  // Function to draw the heatmap for a given experience level (null for all)
+  function drawHeatmapForLevel(level) {
+    // Enforce fixed y-axis order
+    const baseOrder = ['Data Engineer','Data Scientist','Data Analyst','ML Engineer','Analytics Engineer'];
+    // Compute top 5 job titles for this level (or all if level is null)
+    let titlesForLevel;
+    if (level) {
+      titlesForLevel = Array.from(
+        d3.rollup(
+          data.filter(d => d.experience_level === level),
+          v => v.length,
+          d => normalizeTitle(d.job_title)
+        )
+      )
+        .sort((a, b) => d3.descending(a[1], b[1]))
+        .slice(0, 5)
+        .map(d => d[0]);
+    } else {
+      // Use global topTitles (from Sankey) if no level selected
+      titlesForLevel = ['Data Engineer','Data Scientist','Data Analyst','ML Engineer', 'Analytics Engineer'];
+    }
+    // Filter data for selected experience level (or all)
+    const filteredData = level ? data.filter(d => d.experience_level === level) : data;
+    // Roll up average salary by normalized title and year
+    let nestedHM = d3.rollups(
+      filteredData,
+      v => d3.mean(v, d => d.salary_in_usd),
+      d => normalizeTitle(d.job_title),
+      d => d.work_year
+    );
+    nestedHM = nestedHM.filter(([title]) => titlesForLevel.includes(title));
+    // Build flat array and full grid
+    const heatDataHM = [];
+    nestedHM.forEach(([title, arr]) => {
+      arr.forEach(([year, avg]) => {
+        heatDataHM.push({ title, year: year.toString(), avg });
+      });
+    });
+    // Fill in missing grid cells for all years/titles
+    const xLv = Array.from(new Set(heatDataHM.map(d => d.year))).sort();
+    // Enforce base order, and append "Other" at end if present
+    const yLv = baseOrder.filter(t => titlesForLevel.includes(t));
+    if (nestedHM.some(([title]) => title === 'Other')) {
+      yLv.push('Other');
+    }
+    const fullHM = [];
+    yLv.forEach(title => {
+      xLv.forEach(year => {
+        const match = heatDataHM.find(h => h.title === title && h.year === year);
+        fullHM.push({ title, year, avg: match ? match.avg : null });
+      });
+    });
+    // Update color scale domain based on data
+    color.domain(d3.extent(heatDataHM, d => d.avg));
+    // Update axes domains
+    x.domain(xLv);
+    y.domain(yLv);
+    svg.select('g.x-axis').call(d3.axisBottom(x))
+      .selectAll('text')
+        .attr('transform', 'rotate(-40)')
+        .style('text-anchor', 'end');
+    svg.select('g.y-axis').call(d3.axisLeft(y));
+    // Bind data and redraw cells
+    const cells = svg.selectAll('rect.heat')
+      .data(fullHM, d => d.title + ':' + d.year);
+    cells.join(
+      enter => enter.append('rect').attr('class','heat'),
+      update => update,
+      exit => exit.remove()
+    )
       .attr('x', d => x(d.year))
       .attr('y', d => y(d.title))
       .attr('width',  x.bandwidth())
       .attr('height', y.bandwidth())
-      .attr('fill', d => {
-        return (d.avg == null || isNaN(d.avg))
-          ? '#cccccc'
-          : color(d.avg);
-      })
+      .attr('fill', d => d.avg == null ? '#ccc' : color(d.avg))
+      .attr('opacity', 1)
+      .attr('stroke', 'none')
       .on('mouseover', (event, d) => {
         // No selection: per-cell tooltip
         if (selectedLevels.size === 0) {
@@ -208,16 +243,15 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         }
         // If there is a selection, ignore rows not in that set
         if (!selectedLevels.has(d.title)) return;
-
         // Compute combined average across all selected titles
-        const combinedCells = fullHeatData.filter(h => selectedLevels.has(h.title) && h.avg != null);
+        const combinedCells = fullHM.filter(h => selectedLevels.has(h.title) && h.avg != null);
         const combinedAvg = d3.mean(combinedCells, h => h.avg);
         // Build a comma-separated list of selected titles
         const titlesList = Array.from(selectedLevels).join(', ');
         const [mx, my] = d3.pointer(event, d3.select('#heatmap').node());
         tooltip
           .style('opacity', 1)
-          .html(`Titles: ${titlesList}<br>Avg over time: \$${combinedAvg.toFixed(0)}`)
+          .html(`Titles: ${titlesList}<br>Avg over Role(s): \$${combinedAvg.toFixed(0)}`)
           .style('left',  (mx + 15) + 'px')
           .style('top',   (my - 25) + 'px');
       })
@@ -240,6 +274,12 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         }
         updateHeatmapSelection();
       });
+    // After drawing, update selection styling
+    updateHeatmapSelection();
+  }
+
+  // Initial heatmap creation: show all top titles (no experience level selected)
+  drawHeatmapForLevel(null);
 
   // Legend for heatmap
   const legendHWidth = width;
@@ -252,6 +292,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .attr("x1", "0%").attr("y1", "0%")
     .attr("x2", "100%").attr("y2", "0%");
 
+  // The color scale domain will be updated in drawHeatmapForLevel.
   gradientH.selectAll("stop")
     .data(color.ticks().map((t, i, n) => ({ offset: `${100 * i / (n.length - 1)}%`, color: color(t) })))
     .enter().append("stop")
@@ -615,6 +656,8 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
           selectedBarLevels.clear();
           selectedBarLevels.add(level);
           updateBarFilter();
+          // Draw heatmap for selected experience level (top 5 titles for that level)
+          drawHeatmapForLevel(level);
         });
     });
 
