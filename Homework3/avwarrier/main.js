@@ -1,3 +1,5 @@
+import('https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js');
+
 const winW = window.innerWidth;
 const winH = window.innerHeight;
 
@@ -35,11 +37,9 @@ const mK = {
 const wK = winW * 0.9;  // 90% of width
 const hK = winH * 0.80; // 85% of height
 
-// Main load
-// Main load
-// Main load
+
 d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
-  // Helper: map detailed job titles into base categories
+  // Put job titles into top 5 categories, or other
   function normalizeTitle(job) {
     if (job.includes('Data Engineer')) return 'Data Engineer';
     if (job.includes('Data Scientist')) return 'Data Scientist';
@@ -48,17 +48,15 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     if (job.includes('Analytics Engineer')) return 'Analytics Engineer';
     return 'Other';
   }
-  // Hide other views
+
+  // Only Show sankey
   d3.select('#heatmap').style('display', 'none');
   d3.select('#barchart').style('display', 'none');
-  if (!('sankey' in d3)) {
-    await import('https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js');
-  }
 
   // Back button (initially hidden)
   const backBtn = d3.select('body').append('button')
     .attr('id', 'back-btn')
-    .text('← Back')
+    .text('< Back')
     .style('position', 'fixed')
     .style('top', '20px')
     .style('left', '20px')
@@ -66,11 +64,11 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .style('padding', '8px 12px')
     .style('font-size', '14px')
     .on('click', () => {
-      // hide detail, show sankey
+      // When going back, hide focus views
       d3.select('#heatmap').style('display', 'none');
       d3.select('#barchart').style('display', 'none');
       d3.select('#sankey').style('display', 'block');
-      // reset sankey zoom
+      // Reset sankey zoom
       d3.select('#sankey-wrapper').select('svg')
         .transition().duration(500)
         .style('transform', 'translate(0px,0px) scale(1)');
@@ -104,10 +102,10 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .style("font-weight", "bold")
     .text("Salary per Job Type over Time");
   
-  // Selection state for job titles (for heatmap selection)
+  // Selected Levels(rows) on Heatmap
   const selectedLevels = new Set();
 
-  // Scales for heatmap (will be updated in drawHeatmapForLevel)
+  // Scales for heatmap
   const x = d3.scaleBand()
     .range([0, width])
     .padding(0.05);
@@ -116,11 +114,11 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .range([0, height])
     .padding(0.05);
 
-  // Color scale for heatmap (domain set in drawHeatmapForLevel)
+  // Color scale for heatmap
   const color = d3.scaleSequential()
     .interpolator(d3.interpolateViridis);
 
-  // Axes for heatmap (created once, updated later)
+  // Axes for heatmap
   svg.append('g')
     .attr('class', 'x-axis')
     .attr('transform', `translate(0, ${height})`);
@@ -145,19 +143,18 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .style("font-size", "12px")
     .text("Job Title");
 
-  // Function to update heatmap selection styling
+  // Function to update heatmap selection opacity
   function updateHeatmapSelection() {
     svg.selectAll('rect.heat')
       .attr('opacity', d => selectedLevels.size === 0 || selectedLevels.has(d.title) ? 1 : 0.2)
-      .attr('stroke', d => selectedLevels.has(d.title) ? 'black' : 'none')
-      .attr('stroke-width', d => selectedLevels.has(d.title) ? 2 : 0);
   }
 
-  // Function to draw the heatmap for a given experience level (null for all)
+  // Function to draw the heatmap for a given job role
   function drawHeatmapForLevel(level) {
-    // Enforce fixed y-axis order
+    // Order of Y-axis
     const baseOrder = ['Data Engineer','Data Scientist','Data Analyst','ML Engineer','Analytics Engineer'];
-    // Compute top 5 job titles for this level (or all if level is null)
+
+    // Compute top 5 job titles for this level
     let titlesForLevel;
     if (level) {
       titlesForLevel = Array.from(
@@ -167,37 +164,43 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
           d => normalizeTitle(d.job_title)
         )
       )
-        .sort((a, b) => d3.descending(a[1], b[1]))
-        .slice(0, 5)
-        .map(d => d[0]);
+      .sort((a, b) => d3.descending(a[1], b[1]))
+      .slice(0, 5)
+      .map(d => d[0]);
     } else {
-      // Use global topTitles (from Sankey) if no level selected
       titlesForLevel = ['Data Engineer','Data Scientist','Data Analyst','ML Engineer', 'Analytics Engineer'];
     }
-    // Filter data for selected experience level (or all)
+
+    // Filter data for selected experience level
     const filteredData = level ? data.filter(d => d.experience_level === level) : data;
-    // Roll up average salary by normalized title and year
+
+    // Average salary by job title and year
     let nestedHM = d3.rollups(
       filteredData,
       v => d3.mean(v, d => d.salary_in_usd),
       d => normalizeTitle(d.job_title),
       d => d.work_year
     );
+
     nestedHM = nestedHM.filter(([title]) => titlesForLevel.includes(title));
-    // Build flat array and full grid
+
+    // Build Array and full grid
     const heatDataHM = [];
     nestedHM.forEach(([title, arr]) => {
       arr.forEach(([year, avg]) => {
         heatDataHM.push({ title, year: year.toString(), avg });
       });
     });
+
     // Fill in missing grid cells for all years/titles
     const xLv = Array.from(new Set(heatDataHM.map(d => d.year))).sort();
-    // Enforce base order, and append "Other" at end if present
+
+    // Enforce base order, and append "Other" at end if necessary
     const yLv = baseOrder.filter(t => titlesForLevel.includes(t));
     if (nestedHM.some(([title]) => title === 'Other')) {
       yLv.push('Other');
     }
+
     const fullHM = [];
     yLv.forEach(title => {
       xLv.forEach(year => {
@@ -205,8 +208,10 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         fullHM.push({ title, year, avg: match ? match.avg : null });
       });
     });
+
     // Update color scale domain based on data
     color.domain(d3.extent(heatDataHM, d => d.avg));
+
     // Update axes domains
     x.domain(xLv);
     y.domain(yLv);
@@ -215,6 +220,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         .attr('transform', 'rotate(-40)')
         .style('text-anchor', 'end');
     svg.select('g.y-axis').call(d3.axisLeft(y));
+
     // Bind data and redraw cells
     const cells = svg.selectAll('rect.heat')
       .data(fullHM, d => d.title + ':' + d.year);
@@ -231,6 +237,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
       .attr('opacity', 1)
       .attr('stroke', 'none')
       .on('mouseover', (event, d) => {
+
         // No selection: per-cell tooltip
         if (selectedLevels.size === 0) {
           const [mx, my] = d3.pointer(event, d3.select('#heatmap').node());
@@ -241,11 +248,14 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
             .style('top',   (my - 25) + 'px');
           return;
         }
+
         // If there is a selection, ignore rows not in that set
         if (!selectedLevels.has(d.title)) return;
+
         // Compute combined average across all selected titles
         const combinedCells = fullHM.filter(h => selectedLevels.has(h.title) && h.avg != null);
         const combinedAvg = d3.mean(combinedCells, h => h.avg);
+
         // Build a comma-separated list of selected titles
         const titlesList = Array.from(selectedLevels).join(', ');
         const [mx, my] = d3.pointer(event, d3.select('#heatmap').node());
@@ -285,14 +295,12 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
   const legendHWidth = width;
   const legendHeight = 10;
 
-  // Define horizontal gradient
   const defsH = svg.append("defs");
   const gradientH = defsH.append("linearGradient")
     .attr("id", "heat-legend-gradient")
     .attr("x1", "0%").attr("y1", "0%")
     .attr("x2", "100%").attr("y2", "0%");
 
-  // The color scale domain will be updated in drawHeatmapForLevel.
   gradientH.selectAll("stop")
     .data(color.ticks().map((t, i, n) => ({ offset: `${100 * i / (n.length - 1)}%`, color: color(t) })))
     .enter().append("stop")
@@ -338,7 +346,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     .attr('width', width2 + margin2.left + margin2.right)
     .attr('height', height2 + margin2.top + margin2.bottom);
   
-  // Add title directly to the SVG, not inside the g-element
+  // Add title directly to the SVG
   barchartSvg.append("text")
     .attr("x", (width2 + margin2.left + margin2.right) / 2)
     .attr("y", winH * 0.15)
@@ -440,7 +448,6 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
       .attr('text-anchor', 'start');
   });
   
-  // --- Bar chart filtering state and logic ---
   // Selection state for bar chart experience levels
   const selectedBarLevels = new Set();
 
@@ -502,7 +509,6 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
  
 
 // Sankey
-
   d3.select('#sankey').html('');
 
   // Sankey wrapper for pan/zoom
@@ -634,29 +640,32 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
     'MI': -1.60,
     'EN': -2.00
   }
+
   // Click on experience-level nodes to switch to detail view with smooth pan/zoom
   gNodes
     .filter(d => ['EN', 'MI', 'SE', 'EX'].includes(d.name))
     .style('cursor', 'pointer')
     .on('click', (event, d) => {
       const level = d.name;
-      // animate Sankey zoom-in
+      // Animate Sankey zoom in
       sankeyWrapper.select('svg')
         .transition().duration(1000)
         .styleTween('transform', () =>
           d3.interpolateString('translate(0px,0px) scale(1)', `translate(-1600px,${levelZoom[level] * winH}px) scale(3)`)
         )
         .on('end', () => {
-          // after animation, switch views
+          // After animation, switch views
           d3.select('#sankey').style('display', 'none');
           d3.select('#heatmap').style('display', 'block');
           d3.select('#barchart').style('display', 'block');
           backBtn.style('display', 'block');
-          // set detail filters for heatmap
+
+          // Set detail filters for heatmap
           selectedBarLevels.clear();
           selectedBarLevels.add(level);
           updateBarFilter();
-          // Draw heatmap for selected experience level (top 5 titles for that level)
+          
+          // Draw heatmap for selected experience level
           drawHeatmapForLevel(level);
         });
     });
