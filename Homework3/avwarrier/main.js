@@ -73,7 +73,21 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
         .transition().duration(500)
         .style('transform', 'translate(0px,0px) scale(1)');
       backBtn.style('display', 'none');
+      d3.select('#focus-header').style('display', 'none');
     });
+
+  // Focus view header
+  const focusHeader = d3.select('body')
+    .append('div')
+    .attr('id', 'focus-header')
+    .style('position', 'fixed')
+    .style('top', '5%')
+    .style('left', '50%')
+    .style('transform', 'translateX(-50%)')
+    .style('text-align', 'center')
+    .style('font-size', '18px')
+    .style('font-weight', 'bold')
+    .style('display', 'none')
   
   // Heatmap tooltip
   const tooltip = d3.select('#heatmap')
@@ -651,7 +665,7 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
       sankeyWrapper.select('svg')
         .transition().duration(1000)
         .styleTween('transform', () =>
-          d3.interpolateString('translate(0px,0px) scale(1)', `translate(-1600px,${levelZoom[level] * winH}px) scale(3)`)
+          d3.interpolateString('translate(0px,0px) scale(1)', `translate(${-winW * 1.12}px,${levelZoom[level] * winH}px) scale(3)`)
         )
         .on('end', () => {
           // After animation, switch views
@@ -659,6 +673,10 @@ d3.csv('./data/ds_salaries.csv', d3.autoType).then(async data => {
           d3.select('#heatmap').style('display', 'block');
           d3.select('#barchart').style('display', 'block');
           backBtn.style('display', 'block');
+
+          d3.select('#focus-header')
+            .text(`Selected Experience Level: ${level}`)
+            .style('display', 'block');
 
           // Set detail filters for heatmap
           selectedBarLevels.clear();
